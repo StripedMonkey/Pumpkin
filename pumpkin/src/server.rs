@@ -326,7 +326,7 @@ impl Server {
         from.send_packet(packet).await;
         for (_, client) in self.current_clients.iter().filter(|c| c.0 != &from.token) {
             // Check if client is a player
-            let mut client = client.blocking_lock();
+            let mut client = client.lock().await;
             if client.is_player() {
                 client.send_packet(packet).await;
             }
