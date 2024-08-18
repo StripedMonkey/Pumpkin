@@ -385,22 +385,27 @@ impl Client {
                             self.kick(&e.to_string()).await;
                             break;
                         }
+                    };
+                    loop {
+                        match self.dec.decode() {
+                            Ok(Some(packet)) => {
+                                    self.add_packet(packet);
+                                    let mut server = server.write().await;
+                                    self.process_packets(&mut server).await;
+                                    continue;
+                            }
+                            Ok(None) => break,
+                            Err(err) => {
+                                self.kick(&err.to_string()).await;
+                                break;
+                            },
+                        };
                     }
+
                 },
                 _ = tokio::time::sleep(Duration::from_millis(100)) => {
                     // Handle timeout (optional)
                 }
-            }
-
-            match self.dec.decode() {
-                Ok(packet) => {
-                    if let Some(packet) = packet {
-                        self.add_packet(packet);
-                        let mut server = server.write().await;
-                        self.process_packets(&mut server).await;
-                    }
-                }
-                Err(err) => self.kick(&err.to_string()).await,
             }
         }
     }
