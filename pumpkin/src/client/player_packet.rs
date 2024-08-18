@@ -4,8 +4,7 @@ use num_traits::FromPrimitive;
 use pumpkin_entity::EntityId;
 use pumpkin_protocol::{
     client::play::{
-        Animation, CBlockUpdate, CEntityAnimation, CEntityVelocity, CHeadRot, CHurtAnimation,
-        CPlayerChatMessage, CUpdateEntityPos, CUpdateEntityPosRot, CUpdateEntityRot, FilterType,
+        Animation, CBlockUpdate, CEntityAnimation, CEntityVelocity, CHeadRot, CHurtAnimation, CPlayerChatMessage, CSystemChatMessge, CUpdateEntityPos, CUpdateEntityPosRot, CUpdateEntityRot, FilterType
     },
     position::WorldPosition,
     server::play::{
@@ -24,7 +23,7 @@ use crate::{
     util::math::wrap_degrees,
 };
 
-use super::{Client, PlayerConfig};
+use super::{client::PlayerConfig, Client};
 
 fn modulus(a: f32, b: f32) -> f32 {
     ((a % b) + b) % b
@@ -226,18 +225,20 @@ impl Client {
         let message = chat_message.message;
         // TODO: filter message & validation
         let gameprofile = self.gameprofile.as_ref().unwrap();
+        let name = gameprofile.name.clone();
         dbg!("got message");
         // yeah a "raw system message", the ugly way to do that, but it works
         server
             .broadcast_packet(
                 self,
                 &CSystemChatMessge::new(
-                    TextComponent::from(format!("{}: {}", gameprofile.name, message)),
+                    TextComponent::text(&format!("{}: {}", name, message)),
                     false,
                 ),
             )
             .await;
 
+        let gameprofile = self.gameprofile.as_ref().unwrap();
         server.broadcast_packet(
             self,
             &CPlayerChatMessage::new(
@@ -296,7 +297,7 @@ impl Client {
                 let attacker_player = self.player.as_mut().unwrap();
                 attacker_player.sneaking = interact.sneaking;
                 if let Some(mut client) = attacked_client {
-                    let token = client.token.clone();
+                    let token = client.token;
                     let player = client.player.as_mut().unwrap();
                     let velo = player.velocity;
                     if config.protect_creative && player.gamemode == GameMode::Creative {

@@ -29,7 +29,7 @@ impl<'a> Command<'a> for GamemodeCommand {
         let mode_str = args[1].to_lowercase();
         match mode_str.parse() {
             Ok(mode) => {
-                player.set_gamemode(mode);
+                player.set_gamemode(mode).await;
                 player
                     .send_system_message(TextComponent::text(&format!(
                     "Set own game mode to {:?}",
@@ -41,7 +41,7 @@ impl<'a> Command<'a> for GamemodeCommand {
                 // try to parse from number
                 if let Ok(i) = mode_str.parse::<u8>() {
                     if let Some(mode) = GameMode::from_u8(i) {
-                        player.set_gamemode(mode);
+                        player.set_gamemode(mode).await;
                         player.send_system_message(TextComponent::text(&format!(
                             "Set own game mode to {:?}",
                             mode

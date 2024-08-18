@@ -1,3 +1,5 @@
+#![allow(clippy::module_inception)]
+
 use std::{
     io::{self},
     net::SocketAddr,

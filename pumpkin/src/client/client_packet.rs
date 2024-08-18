@@ -18,7 +18,10 @@ use rsa::Pkcs1v15Encrypt;
 use sha1::{Digest, Sha1};
 
 use crate::{
-    client::authentication::{self, GameProfile},
+    client::{
+        authentication::{self, GameProfile},
+        client::PlayerConfig,
+    },
     entity::player::{ChatMode, Hand},
     proxy::velocity::velocity_login,
     server::{Server, CURRENT_MC_VERSION},
@@ -26,7 +29,8 @@ use crate::{
 
 use super::{
     authentication::{auth_digest, unpack_textures},
-    Client, EncryptionError, PlayerConfig,
+    client::Client,
+    EncryptionError,
 };
 
 /// Processes incoming Packets from the Client to the Server

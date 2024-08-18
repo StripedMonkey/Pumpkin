@@ -1,3 +1,5 @@
+use std::future::Future;
+
 use gamemode::GamemodeCommand;
 use pumpkin::PumpkinCommand;
 use pumpkin_text::TextComponent;
@@ -15,7 +17,7 @@ pub trait Command<'a> {
     const NAME: &'a str;
     const DESCRIPTION: &'a str;
 
-    async fn on_execute(sender: &mut CommandSender<'a>, command: String);
+    fn on_execute(sender: &mut CommandSender<'a>, command: String) -> impl Future<Output=()>;
 
     /// Specifies wether the Command Sender has to be a Player
     /// TODO: implement
@@ -31,7 +33,7 @@ pub enum CommandSender<'a> {
 }
 
 impl<'a> CommandSender<'a> {
-    pub async fn send_message(&mut self, text: TextComponent) {
+    pub async fn send_message<'b>(&mut self, text: TextComponent<'b>) {
         match self {
             // TODO: add color and stuff to console
             CommandSender::Console => log::info!("{:?}", text.content),
@@ -79,5 +81,7 @@ pub async fn handle_command<'a>(sender: &mut CommandSender<'a>, command: &str) {
         return;
     }
     // TODO: red color
-    sender.send_message(TextComponent::text("Command not Found")).await;
+    sender
+        .send_message(TextComponent::text("Command not Found"))
+        .await;
 }
