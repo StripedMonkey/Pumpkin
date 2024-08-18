@@ -13,6 +13,7 @@ use crate::{
 
 use authentication::GameProfile;
 use bytes::BytesMut;
+use connection::Connection;
 use num_traits::ToPrimitive;
 use pumpkin_protocol::{
     bytebuf::packet_id::Packet,
@@ -49,6 +50,7 @@ use thiserror::Error;
 
 pub mod authentication;
 mod client_packet;
+pub mod connection;
 pub mod player_packet;
 
 pub struct PlayerConfig {
@@ -75,15 +77,13 @@ pub struct Client {
     pub encryption: bool,
     pub closed: bool,
     pub token: u32,
-    pub connection: TcpStream,
+    pub connection: Connection,
     pub address: SocketAddr,
-    enc: PacketEncoder,
-    dec: PacketDecoder,
     pub client_packets_queue: VecDeque<RawPacket>,
 }
 
 impl Client {
-    pub fn new(token: u32, connection: TcpStream, address: SocketAddr) -> Self {
+    pub fn new(token: u32, client: TcpStream, address: SocketAddr) -> Self {
         Self {
             protocol_version: 0,
             gameprofile: None,
@@ -93,9 +93,7 @@ impl Client {
             address,
             player: None,
             connection_state: ConnectionState::HandShake,
-            connection,
-            enc: PacketEncoder::default(),
-            dec: PacketDecoder::default(),
+            connection: Connection::new(client),
             encryption: true,
             closed: false,
             client_packets_queue: VecDeque::new(),
@@ -116,15 +114,17 @@ impl Client {
         let crypt_key: [u8; 16] = shared_secret
             .try_into()
             .map_err(|_| EncryptionError::SharedWrongLength)?;
-        self.dec.enable_encryption(&crypt_key);
-        self.enc.enable_encryption(&crypt_key);
+        self.connection.dec.enable_encryption(&crypt_key);
+        self.connection.enc.enable_encryption(&crypt_key);
         Ok(())
     }
 
     // Compression threshold, Compression level
     pub fn set_compression(&mut self, compression: Option<(u32, u32)>) {
-        self.dec.set_compression(compression.map(|v| v.0));
-        self.enc.set_compression(compression);
+        self.connection
+            .dec
+            .set_compression(compression.map(|v| v.0));
+        self.connection.enc.set_compression(compression);
     }
 
     pub fn is_player(&self) -> bool {
@@ -133,24 +133,12 @@ impl Client {
 
     /// Send a Clientbound Packet to the Client
     pub async fn send_packet<P: ClientPacket>(&mut self, packet: &P) {
-        match self.try_send_packet(packet).await {
+        match self.connection.try_send_packet(packet).await {
             Ok(_) => {}
             Err(e) => {
                 self.kick(&e.to_string()).await;
             }
         };
-    }
-
-    pub async fn try_send_packet<P: ClientPacket>(
-        &mut self,
-        packet: &P,
-    ) -> Result<(), PacketError> {
-        self.enc.append_packet(packet)?;
-        self.connection
-            .write_all(&self.enc.take())
-            .await
-            .map_err(|_| PacketError::ConnectionWrite)?;
-        Ok(())
     }
 
     pub async fn teleport(&mut self, x: f64, y: f64, z: f64, yaw: f32, pitch: f32) {
@@ -371,14 +359,14 @@ impl Client {
         let mut buf = BytesMut::new();
         loop {
             select! {
-                result = self.connection.read_buf(&mut buf) => {
+                result = self.connection.client.read_buf(&mut buf) => {
                     match result {
                         Ok(0) => {
                             self.close();
                             break;
                         }
                         Ok(_) => {
-                            self.dec.queue_bytes(buf.split());
+                            self.connection.dec.queue_bytes(buf.split());
                         }
                         Err(e) => {
                             log::error!("{}", e);
@@ -387,7 +375,7 @@ impl Client {
                         }
                     };
                     loop {
-                        match self.dec.decode() {
+                        match self.connection.dec.decode() {
                             Ok(Some(packet)) => {
                                     self.add_packet(packet);
                                     let mut server = server.write().await;
@@ -420,6 +408,7 @@ impl Client {
         match self.connection_state {
             ConnectionState::Login => {
                 match self
+                    .connection
                     .try_send_packet(&CLoginDisconnect::new(
                         &serde_json::to_string_pretty(&reason).unwrap(),
                     ))
@@ -430,13 +419,18 @@ impl Client {
                 }
             }
             ConnectionState::Config => {
-                match self.try_send_packet(&CConfigDisconnect::new(reason)).await {
+                match self
+                    .connection
+                    .try_send_packet(&CConfigDisconnect::new(reason))
+                    .await
+                {
                     Ok(_) => {}
                     Err(_) => self.close(),
                 }
             }
             ConnectionState::Play => {
                 match self
+                    .connection
                     .try_send_packet(&CPlayDisconnect::new(TextComponent::text(reason)))
                     .await
                 {
