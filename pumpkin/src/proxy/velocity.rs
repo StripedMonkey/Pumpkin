@@ -14,16 +14,18 @@ type HmacSha256 = Hmac<Sha256>;
 const MAX_SUPPORTED_FORWARDING_VERSION: i32 = 4;
 const PLAYER_INFO_CHANNEL: &str = "velocity:player_info";
 
-pub fn velocity_login(client: &mut Client) {
+pub async fn velocity_login(client: &mut Client) {
     let velocity_message_id: i32 = 0;
 
     let mut buf = BytesMut::new();
     buf.put_u8(MAX_SUPPORTED_FORWARDING_VERSION as u8);
-    client.send_packet(&CLoginPluginRequest::new(
-        velocity_message_id.into(),
-        PLAYER_INFO_CHANNEL,
-        &buf,
-    ));
+    client
+        .send_packet(&CLoginPluginRequest::new(
+            velocity_message_id.into(),
+            PLAYER_INFO_CHANNEL,
+            &buf,
+        ))
+        .await;
 }
 
 pub fn check_integrity(data: (&[u8], &[u8]), secret: String) -> bool {
@@ -34,7 +36,7 @@ pub fn check_integrity(data: (&[u8], &[u8]), secret: String) -> bool {
     mac.verify_slice(signature).is_ok()
 }
 
-pub fn receive_plugin_response(
+pub async fn receive_plugin_response(
     client: &mut Client,
     config: VelocityConfig,
     response: SLoginPluginResponse,
@@ -44,7 +46,7 @@ pub fn receive_plugin_response(
         let (signature, data_without_signature) = data.split_at(32);
 
         if !check_integrity((signature, data_without_signature), config.secret) {
-            client.kick("Unable to verify player details");
+            client.kick("Unable to verify player details").await;
             return;
         }
         let mut buf = ByteBuffer::new(BytesMut::new());
@@ -54,9 +56,11 @@ pub fn receive_plugin_response(
         let version = buf.get_var_int();
         let version = version.0;
         if version > MAX_SUPPORTED_FORWARDING_VERSION {
-            client.kick(&format!(
+            client
+                .kick(&format!(
                 "Unsupported forwarding version {version}, Max: {MAX_SUPPORTED_FORWARDING_VERSION}"
-            ));
+            ))
+                .await;
             return;
         }
         // TODO: no unwrap
@@ -64,6 +68,8 @@ pub fn receive_plugin_response(
         client.address = addr;
         todo!()
     } else {
-        client.kick("This server requires you to connect with Velocity.")
+        client
+            .kick("This server requires you to connect with Velocity.")
+            .await;
     }
 }

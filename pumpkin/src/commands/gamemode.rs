@@ -12,15 +12,17 @@ impl<'a> Command<'a> for GamemodeCommand {
 
     const DESCRIPTION: &'a str = "Changes the gamemode for a Player";
 
-    fn on_execute(sender: &mut super::CommandSender<'a>, command: String) {
+    async fn on_execute(sender: &mut super::CommandSender<'a>, command: String) {
         let player = sender.as_mut_player().unwrap();
         let args: Vec<&str> = command.split_whitespace().collect();
 
         if args.len() != 2 {
-            player.send_system_message(
-                TextComponent::text("Usage: /gamemode <mode>")
-                    .color_named(pumpkin_text::color::NamedColor::Red),
-            );
+            player
+                .send_system_message(
+                    TextComponent::text("Usage: /gamemode <mode>")
+                        .color_named(pumpkin_text::color::NamedColor::Red),
+                )
+                .await;
             return;
         }
 
@@ -28,10 +30,12 @@ impl<'a> Command<'a> for GamemodeCommand {
         match mode_str.parse() {
             Ok(mode) => {
                 player.set_gamemode(mode);
-                player.send_system_message(TextComponent::text(&format!(
+                player
+                    .send_system_message(TextComponent::text(&format!(
                     "Set own game mode to {:?}",
                     mode
-                )));
+                )))
+                    .await;
             }
             Err(_) => {
                 // try to parse from number
@@ -41,15 +45,18 @@ impl<'a> Command<'a> for GamemodeCommand {
                         player.send_system_message(TextComponent::text(&format!(
                             "Set own game mode to {:?}",
                             mode
-                        )));
+                        )))
+                            .await;
                         return;
                     }
                 }
 
-                player.send_system_message(
-                    TextComponent::text("Invalid gamemode")
-                        .color_named(pumpkin_text::color::NamedColor::Red),
-                );
+                player
+                    .send_system_message(
+                        TextComponent::text("Invalid gamemode")
+                            .color_named(pumpkin_text::color::NamedColor::Red),
+                    )
+                    .await;
             }
         }
     }

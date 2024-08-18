@@ -879,7 +879,6 @@ checksum = "4569e456d394deccd22ce1c1913e6ea0e54519f577285001215d33557431afe4"
 dependencies = [
  "hermit-abi",
  "libc",
- "log",
  "wasi",
  "windows-sys 0.52.0",
 ]
@@ -1199,7 +1198,6 @@ dependencies = [
  "hmac",
  "image",
  "log",
- "mio",
  "num-bigint",
  "num-derive",
  "num-traits",
@@ -1256,6 +1254,7 @@ name = "pumpkin-protocol"
 version = "0.1.0"
 dependencies = [
  "aes",
+ "byteorder",
  "bytes",
  "cfb8",
  "fastnbt",
@@ -1881,9 +1880,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.39.2"
+version = "1.39.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "daa4fb1bc778bd6f04cbfc4bb2d06a7396a8f299dc33ea1900cedaa316f467b1"
+checksum = "9babc99b9923bfa4804bd74722ff02c0381021eafa4db9949217e3be8e84fff5"
 dependencies = [
  "backtrace",
  "bytes",

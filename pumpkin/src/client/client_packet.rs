@@ -32,7 +32,7 @@ use super::{
 /// Processes incoming Packets from the Client to the Server
 /// Implements the `Client` Packets
 impl Client {
-    pub fn handle_handshake(&mut self, _server: &mut Server, handshake: SHandShake) {
+    pub async fn handle_handshake(&mut self, _server: &mut Server, handshake: SHandShake) {
         dbg!("handshake");
         self.protocol_version = handshake.protocol_version.0;
         self.connection_state = handshake.next_state;
@@ -40,23 +40,29 @@ impl Client {
             let protocol = self.protocol_version;
             match protocol.cmp(&(CURRENT_MC_PROTOCOL as i32)) {
                 std::cmp::Ordering::Less => {
-                    self.kick(&format!("Client outdated ({protocol}), Server uses Minecraft {CURRENT_MC_VERSION}, Protocol {CURRENT_MC_PROTOCOL}"));
+                    self.kick(&format!("Client outdated ({protocol}), Server uses Minecraft {CURRENT_MC_VERSION}, Protocol {CURRENT_MC_PROTOCOL}")).await;
                 }
                 std::cmp::Ordering::Equal => {}
                 std::cmp::Ordering::Greater => {
-                    self.kick(&format!("Server outdated, Server uses Minecraft {CURRENT_MC_VERSION}, Protocol {CURRENT_MC_PROTOCOL}"));
+                    self.kick(&format!("Server outdated, Server uses Minecraft {CURRENT_MC_VERSION}, Protocol {CURRENT_MC_PROTOCOL}")).await;
                 }
             }
         }
     }
 
-    pub fn handle_status_request(&mut self, server: &mut Server, _status_request: SStatusRequest) {
-        self.send_packet(&CStatusResponse::new(&server.status_response_json));
+    pub async fn handle_status_request(
+        &mut self,
+        server: &mut Server,
+        _status_request: SStatusRequest,
+    ) {
+        self.send_packet(&CStatusResponse::new(&server.status_response_json))
+            .await;
     }
 
-    pub fn handle_ping_request(&mut self, _server: &mut Server, ping_request: SPingRequest) {
+    pub async fn handle_ping_request(&mut self, _server: &mut Server, ping_request: SPingRequest) {
         dbg!("ping");
-        self.send_packet(&CPingResponse::new(ping_request.payload));
+        self.send_packet(&CPingResponse::new(ping_request.payload))
+            .await;
         self.close();
     }
 
@@ -64,11 +70,11 @@ impl Client {
         name.len() <= 16 && name.chars().all(|c| c > 32 as char && c < 127 as char)
     }
 
-    pub fn handle_login_start(&mut self, server: &mut Server, login_start: SLoginStart) {
+    pub async fn handle_login_start(&mut self, server: &mut Server, login_start: SLoginStart) {
         dbg!("login start");
 
         if !Self::is_valid_player_name(&login_start.name) {
-            self.kick("Invalid characters in username");
+            self.kick("Invalid characters in username").await;
             return;
         }
         // default game profile, when no online mode
@@ -82,7 +88,7 @@ impl Client {
         let proxy = &server.advanced_config.proxy;
         if proxy.enabled {
             if proxy.velocity.enabled {
-                velocity_login(self)
+                velocity_login(self).await
             }
             return;
         }
@@ -96,7 +102,7 @@ impl Client {
             &verify_token,
             server.base_config.online_mode, // TODO
         );
-        self.send_packet(&packet);
+        self.send_packet(&packet).await;
     }
 
     pub async fn handle_encryption_response(
@@ -109,8 +115,12 @@ impl Client {
             .decrypt(Pkcs1v15Encrypt, &encryption_response.shared_secret)
             .map_err(|_| EncryptionError::FailedDecrypt)
             .unwrap();
-        self.enable_encryption(&shared_secret)
-            .unwrap_or_else(|e| self.kick(&e.to_string()));
+        match self.enable_encryption(&shared_secret) {
+            Ok(d) => d,
+            Err(e) => {
+                self.kick(&e.to_string()).await;
+            }
+        }
 
         if server.base_config.online_mode {
             let hash = Sha1::new()
@@ -137,7 +147,7 @@ impl Client {
                             .allow_banned_players
                         {
                             if !p.is_empty() {
-                                self.kick("Your account can't join");
+                                self.kick("Your account can't join").await;
                             }
                         } else {
                             for allowed in server
@@ -148,14 +158,14 @@ impl Client {
                                 .clone()
                             {
                                 if !p.contains(&allowed) {
-                                    self.kick("Your account can't join");
+                                    self.kick("Your account can't join").await;
                                 }
                             }
                         }
                     }
                     self.gameprofile = Some(p);
                 }
-                Err(e) => self.kick(&e.to_string()),
+                Err(e) => self.kick(&e.to_string()).await,
             }
         }
         for ele in self.gameprofile.as_ref().unwrap().properties.clone() {
@@ -170,32 +180,33 @@ impl Client {
                 .packet_compression
                 .compression_threshold;
             let level = server.advanced_config.packet_compression.compression_level;
-            self.send_packet(&CSetCompression::new(threshold.into()));
+            self.send_packet(&CSetCompression::new(threshold.into()))
+                .await;
             self.set_compression(Some((threshold, level)));
         }
 
         if let Some(profile) = self.gameprofile.as_ref().cloned() {
             let packet = CLoginSuccess::new(profile.id, &profile.name, &profile.properties, false);
-            self.send_packet(&packet);
+            self.send_packet(&packet).await;
         } else {
-            self.kick("game profile is none");
+            self.kick("game profile is none").await;
         }
     }
 
-    pub fn handle_plugin_response(
+    pub async fn handle_plugin_response(
         &mut self,
         _server: &mut Server,
         _plugin_response: SLoginPluginResponse,
     ) {
     }
 
-    pub fn handle_login_acknowledged(
+    pub async fn handle_login_acknowledged(
         &mut self,
         server: &mut Server,
         _login_acknowledged: SLoginAcknowledged,
     ) {
         self.connection_state = ConnectionState::Config;
-        server.send_brand(self);
+        server.send_brand(self).await;
 
         let resource_config = &server.advanced_config.resource_pack;
         if resource_config.enabled {
@@ -213,7 +224,8 @@ impl Client {
                 &resource_config.resource_pack_sha1,
                 resource_config.force,
                 prompt_message,
-            ));
+            ))
+            .await;
         }
 
         // known data packs
@@ -221,10 +233,11 @@ impl Client {
             namespace: "minecraft",
             id: "core",
             version: "1.21",
-        }]));
+        }]))
+        .await;
         dbg!("login achnowlaged");
     }
-    pub fn handle_client_information_config(
+    pub async fn handle_client_information_config(
         &mut self,
         _server: &mut Server,
         client_information: SClientInformationConfig,
@@ -242,29 +255,38 @@ impl Client {
         });
     }
 
-    pub fn handle_plugin_message(&mut self, _server: &mut Server, plugin_message: SPluginMessage) {
+    pub async fn handle_plugin_message(
+        &mut self,
+        _server: &mut Server,
+        plugin_message: SPluginMessage,
+    ) {
         if plugin_message.channel.starts_with("minecraft:brand")
             || plugin_message.channel.starts_with("MC|Brand")
         {
             dbg!("got a client brand");
             match String::from_utf8(plugin_message.data) {
                 Ok(brand) => self.brand = Some(brand),
-                Err(e) => self.kick(&e.to_string()),
+                Err(e) => self.kick(&e.to_string()).await,
             }
         }
     }
 
-    pub fn handle_known_packs(&mut self, server: &mut Server, _config_acknowledged: SKnownPacks) {
+    pub async fn handle_known_packs(
+        &mut self,
+        server: &mut Server,
+        _config_acknowledged: SKnownPacks,
+    ) {
         for registry in &server.cached_registry {
             self.send_packet(&CRegistryData::new(
                 &registry.registry_id,
                 &registry.registry_entries,
-            ));
+            ))
+            .await;
         }
 
         // We are done with configuring
         dbg!("finish config");
-        self.send_packet(&CFinishConfig::new());
+        self.send_packet(&CFinishConfig::new()).await;
     }
 
     pub async fn handle_config_acknowledged(

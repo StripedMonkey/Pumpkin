@@ -24,7 +24,6 @@ pub struct PacketDecoder {
 impl PacketDecoder {
     pub fn decode(&mut self) -> Result<Option<RawPacket>, PacketError> {
         let mut r = &self.buf[..];
-
         let packet_len = match VarInt::decode_partial(&mut r) {
             Ok(len) => len,
             Err(VarIntDecodeError::Incomplete) => return Ok(None),

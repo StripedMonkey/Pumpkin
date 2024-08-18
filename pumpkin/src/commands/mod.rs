@@ -15,7 +15,7 @@ pub trait Command<'a> {
     const NAME: &'a str;
     const DESCRIPTION: &'a str;
 
-    fn on_execute(sender: &mut CommandSender<'a>, command: String);
+    async fn on_execute(sender: &mut CommandSender<'a>, command: String);
 
     /// Specifies wether the Command Sender has to be a Player
     /// TODO: implement
@@ -31,11 +31,11 @@ pub enum CommandSender<'a> {
 }
 
 impl<'a> CommandSender<'a> {
-    pub fn send_message(&mut self, text: TextComponent) {
+    pub async fn send_message(&mut self, text: TextComponent) {
         match self {
             // TODO: add color and stuff to console
             CommandSender::Console => log::info!("{:?}", text.content),
-            CommandSender::Player(c) => c.send_system_message(text),
+            CommandSender::Player(c) => c.send_system_message(text).await,
             CommandSender::Rcon(s) => s.push(format!("{:?}", text.content)),
         }
     }
@@ -63,21 +63,21 @@ impl<'a> CommandSender<'a> {
         }
     }
 }
-pub fn handle_command(sender: &mut CommandSender, command: &str) {
+pub async fn handle_command<'a>(sender: &mut CommandSender<'a>, command: &str) {
     let command = command.to_lowercase();
     // an ugly mess i know
     if command.starts_with(PumpkinCommand::NAME) {
-        PumpkinCommand::on_execute(sender, command);
+        PumpkinCommand::on_execute(sender, command).await;
         return;
     }
     if command.starts_with(GamemodeCommand::NAME) {
-        GamemodeCommand::on_execute(sender, command);
+        GamemodeCommand::on_execute(sender, command).await;
         return;
     }
     if command.starts_with(StopCommand::NAME) {
-        StopCommand::on_execute(sender, command);
+        StopCommand::on_execute(sender, command).await;
         return;
     }
     // TODO: red color
-    sender.send_message(TextComponent::text("Command not Found"));
+    sender.send_message(TextComponent::text("Command not Found")).await;
 }

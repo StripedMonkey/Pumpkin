@@ -1,4 +1,5 @@
 use bytebuf::{packet_id::Packet, ByteBuffer, DeserializerError};
+use byteorder::ReadBytesExt;
 use bytes::Buf;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
@@ -44,7 +45,7 @@ impl VarInt {
     pub fn decode_partial(r: &mut &[u8]) -> Result<i32, VarIntDecodeError> {
         let mut val = 0;
         for i in 0..Self::MAX_SIZE {
-            let byte = r.get_u8();
+            let byte = r.read_u8().map_err(|_| VarIntDecodeError::Incomplete)?;
             val |= (i32::from(byte) & 0b01111111) << (i * 7);
             if byte & 0b10000000 == 0 {
                 return Ok(val);

@@ -3,10 +3,6 @@ use std::{
     io::{self, Read},
 };
 
-use mio::{
-    net::{TcpListener, TcpStream},
-    Events, Interest, Poll, Token,
-};
 use packet::{Packet, PacketError, PacketType};
 use thiserror::Error;
 
@@ -23,8 +19,6 @@ pub enum RCONError {
     #[error("{}", _0)]
     Io(io::Error),
 }
-
-const SERVER: Token = Token(0);
 
 pub struct RCONServer {}
 

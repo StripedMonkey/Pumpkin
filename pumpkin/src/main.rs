@@ -1,16 +1,18 @@
-#![allow(clippy::await_holding_refcell_ref)]
-
-use mio::net::TcpListener;
-use mio::{Events, Interest, Poll, Token};
-use std::io::{self};
+use std::{
+    io::{self},
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use client::Client;
 use commands::handle_command;
 use config::AdvancedConfiguration;
+use tokio::{
+    net::TcpListener,
+    sync::{Mutex, RwLock},
+};
 
-use std::{collections::HashMap, rc::Rc, thread};
 
-use client::interrupted;
 use config::BasicConfiguration;
 use server::Server;
 
@@ -21,7 +23,7 @@ pub mod commands;
 pub mod config;
 pub mod entity;
 pub mod proxy;
-pub mod rcon;
+// pub mod rcon;
 pub mod server;
 pub mod util;
 
@@ -29,161 +31,91 @@ pub mod util;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-#[cfg(not(target_os = "wasi"))]
-fn main() -> io::Result<()> {
+#[tokio::main]
+async fn main() -> io::Result<()> {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
     #[cfg(feature = "dhat-heap")]
     println!("Using a memory profiler");
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .unwrap();
     // ensure rayon is built outside of tokio scope
     rayon::ThreadPoolBuilder::new().build_global().unwrap();
-    rt.block_on(async {
-        const SERVER: Token = Token(0);
-        use std::{cell::RefCell, time::Instant};
+    use std::time::Instant;
 
-        use rcon::RCONServer;
+    // use rcon::RCONServer;
 
-        let time = Instant::now();
-        let basic_config = BasicConfiguration::load("configuration.toml");
+    let time = Instant::now();
+    let basic_config = BasicConfiguration::load("configuration.toml");
 
-        let advanced_configuration = AdvancedConfiguration::load("features.toml");
+    let advanced_configuration = AdvancedConfiguration::load("features.toml");
 
-        simple_logger::SimpleLogger::new().init().unwrap();
+    simple_logger::SimpleLogger::new().init().unwrap();
 
-        // Create a poll instance.
-        let mut poll = Poll::new()?;
-        // Create storage for events.
-        let mut events = Events::with_capacity(128);
+    let addr: SocketAddr = format!(
+        "{}:{}",
+        basic_config.server_address, basic_config.server_port
+    )
+    .parse()
+    .unwrap();
 
-        // Setup the TCP server socket.
+    let listener = TcpListener::bind(addr)
+        .await
+        .expect("Failed to start TCP Listener");
 
-        let addr = format!(
-            "{}:{}",
-            basic_config.server_address, basic_config.server_port
-        )
-        .parse()
-        .unwrap();
+    let use_console = advanced_configuration.commands.use_console;
+    let rcon = advanced_configuration.rcon.clone();
 
-        let mut listener = TcpListener::bind(addr)?;
+    let server = Arc::new(RwLock::new(Server::new((
+        basic_config,
+        advanced_configuration,
+    ))));
+    log::info!("Started Server took {}ms", time.elapsed().as_millis());
+    log::info!("You now can connect to the server, Listening on {}", addr);
 
-        // Register the server with poll we can receive events for it.
-        poll.registry()
-            .register(&mut listener, SERVER, Interest::READABLE)?;
-
-        // Unique token for each incoming connection.
-        let mut unique_token = Token(SERVER.0 + 1);
-
-        let use_console = advanced_configuration.commands.use_console;
-        let rcon = advanced_configuration.rcon.clone();
-
-        let mut connections: HashMap<Token, Rc<RefCell<Client>>> = HashMap::new();
-
-        let mut server = Server::new((basic_config, advanced_configuration));
-        log::info!("Started Server took {}ms", time.elapsed().as_millis());
-        log::info!("You now can connect to the server, Listening on {}", addr);
-
-        if use_console {
-            thread::spawn(move || {
-                let stdin = std::io::stdin();
-                loop {
-                    let mut out = String::new();
-                    stdin
-                        .read_line(&mut out)
-                        .expect("Failed to read console line");
-                    handle_command(&mut commands::CommandSender::Console, &out);
-                }
-            });
-        }
-        if rcon.enabled {
-            tokio::spawn(async move {
-                RCONServer::new(&rcon).await.unwrap();
-            });
-        }
-        loop {
-            if let Err(err) = poll.poll(&mut events, None) {
-                if interrupted(&err) {
-                    continue;
-                }
-                return Err(err);
+    if use_console {
+        tokio::spawn(async move {
+            let stdin = std::io::stdin();
+            loop {
+                let mut out = String::new();
+                stdin
+                    .read_line(&mut out)
+                    .expect("Failed to read console line");
+                handle_command(&mut commands::CommandSender::Console, &out).await;
             }
+        });
+    }
+    // if rcon.enabled {
+    //     tokio::spawn(async move {
+    //         RCONServer::new(&rcon).await.unwrap();
+    //     });
+    // }
+    let mut current_clients: u32 = 0;
+    loop {
+        let (socket, addr) = listener.accept().await?;
+        log::info!("Accepted connection from: {}", addr);
 
-            for event in events.iter() {
-                match event.token() {
-                    SERVER => loop {
-                        // Received an event for the TCP server socket, which
-                        // indicates we can accept an connection.
-                        let (mut connection, address) = match listener.accept() {
-                            Ok((connection, address)) => (connection, address),
-                            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                // If we get a `WouldBlock` error we know our
-                                // listener has no more incoming connections queued,
-                                // so we can return to polling and wait for some
-                                // more.
-                                break;
-                            }
-                            Err(e) => {
-                                // If it was any other kind of error, something went
-                                // wrong and we terminate with an error.
-                                return Err(e);
-                            }
-                        };
-                        if let Err(e) = connection.set_nodelay(true) {
-                            log::warn!("failed to set TCP_NODELAY {e}");
-                        }
-
-                        log::info!("Accepted connection from: {}", address);
-
-                        let token = next(&mut unique_token);
-                        poll.registry().register(
-                            &mut connection,
-                            token,
-                            Interest::READABLE.add(Interest::WRITABLE),
-                        )?;
-                        let rc_token = Rc::new(token);
-                        let client = Rc::new(RefCell::new(Client::new(
-                            Rc::clone(&rc_token),
-                            connection,
-                            addr,
-                        )));
-                        server.add_client(rc_token, Rc::clone(&client));
-                        connections.insert(token, client);
-                    },
-
-                    token => {
-                        // Maybe received an event for a TCP connection.
-                        let done = if let Some(client) = connections.get_mut(&token) {
-                            let mut client = client.borrow_mut();
-                            client.poll(&mut server, event).await;
-                            client.closed
-                        } else {
-                            // Sporadic events happen, we can safely ignore them.
-                            false
-                        };
-                        if done {
-                            if let Some(client) = connections.remove(&token) {
-                                server.remove_client(&token);
-                                let mut client = client.borrow_mut();
-                                poll.registry().deregister(&mut client.connection)?;
-                            }
-                        }
-                    }
-                }
-            }
+        if let Err(e) = socket.set_nodelay(true) {
+            log::error!("failed to set TCP_NODELAY: {e}");
         }
-    })
-}
+        let server = server.clone();
 
-fn next(current: &mut Token) -> Token {
-    let next = current.0;
-    current.0 += 1;
-    Token(next)
-}
+        current_clients += 1;
+        let token = current_clients; // Replace with your token generation logic
+        let client = Arc::new(Mutex::new(Client::new(token, socket, addr)));
+        dbg!("a");
+        let mut server_guard = server.write().await;
+        server_guard.add_client(token, Arc::clone(&client));
+        drop(server_guard);
 
-#[cfg(target_os = "wasi")]
-fn main() {
-    panic!("can't bind to an address with wasi")
+        tokio::spawn(async move {
+            let mut client = client.lock().await;
+
+            //client.connection.readable().await.expect(":c");
+            client.poll(server.clone()).await;
+            if client.closed {
+                let mut server_guard = server.write().await;
+                server_guard.remove_client(&token).await;
+                current_clients -= 1;
+            }
+        });
+    }
 }

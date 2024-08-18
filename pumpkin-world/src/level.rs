@@ -157,15 +157,13 @@ impl Level {
                 let modulus = |a: i32, b: i32| ((a % b) + b) % b;
                 let chunk_x = modulus(chunk.0, 32) as u32;
                 let chunk_z = modulus(chunk.1, 32) as u32;
-                let channel = channel.clone();
                 let table_entry = (chunk_x + chunk_z * 32) * 4;
+                let table_entry = table_entry as usize;
 
                 let mut offset = vec![0u8];
-                offset.extend_from_slice(
-                    &location_table[table_entry as usize..table_entry as usize + 3],
-                );
+                offset.extend_from_slice(&location_table[table_entry..table_entry + 3]);
                 let offset = u32::from_be_bytes(offset.try_into().unwrap()) as u64 * 4096;
-                let size = location_table[table_entry as usize + 3] as usize * 4096;
+                let size = location_table[table_entry + 3] as usize * 4096;
 
                 if offset == 0 && size == 0 {
                     let _ =
@@ -173,21 +171,22 @@ impl Level {
                     return;
                 }
                 // Read the file using the offset and size
-                let mut file_buf = {
-                    let seek_result = region_file.seek(std::io::SeekFrom::Start(offset));
-                    if seek_result.is_err() {
+                let mut file_buf = match region_file.seek(std::io::SeekFrom::Start(offset)) {
+                    Ok(_) => vec![0; size],
+                    Err(_) => {
                         let _ = channel
                             .blocking_send(((chunk.0, chunk.1), Err(WorldError::RegionIsInvalid)));
                         return;
                     }
-                    let mut out = vec![0; size];
-                    let read_result = region_file.read_exact(&mut out);
-                    if read_result.is_err() {
+                };
+
+                match region_file.read_exact(&mut file_buf) {
+                    Ok(_) => (),
+                    Err(_) => {
                         let _ = channel
                             .blocking_send(((chunk.0, chunk.1), Err(WorldError::RegionIsInvalid)));
                         return;
                     }
-                    out
                 };
 
                 // TODO: check checksum to make sure chunk is not corrupted
