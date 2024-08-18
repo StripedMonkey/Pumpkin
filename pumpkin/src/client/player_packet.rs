@@ -179,7 +179,7 @@ impl Client {
     }
 
     pub async fn handle_chat_command(&mut self, _server: &mut Server, command: SChatCommand) {
-        handle_command(&mut CommandSender::Player(self), &command.command);
+        handle_command(&mut CommandSender::Player(self), &command.command).await;
     }
 
     pub async fn handle_player_command(&mut self, _server: &mut Server, command: SPlayerCommand) {
