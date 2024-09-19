@@ -27,3 +27,7 @@ cfb8 = "0.8.1"
 
 itertools.workspace = true
 fastnbt = { git = "https://github.com/owengage/fastnbt.git" }
+
+tokio-util.workspace = true
+tokio-serde.workspace = true
+tokio-stream.workspace = true

@@ -30,7 +30,9 @@ use crate::{
     world::World,
 };
 
+mod bikeshed_network_listener;
 mod connection_cache;
+mod connections;
 mod key_store;
 pub const CURRENT_MC_VERSION: &str = "1.21.1";
 

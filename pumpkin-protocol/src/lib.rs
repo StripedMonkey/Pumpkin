@@ -1,15 +1,21 @@
 use bytebuf::{packet_id::Packet, ByteBuffer, DeserializerError};
-use bytes::Buf;
+use bytes::{Buf, BytesMut};
 use serde::{Deserialize, Serialize};
-use std::io::{self, Write};
+use std::{
+    cmp,
+    io::{self, Write},
+};
 use thiserror::Error;
 
 pub mod bytebuf;
 pub mod client;
+pub mod packet_codec;
 pub mod packet_decoder;
 pub mod packet_encoder;
+pub mod raw_packet;
 pub mod server;
 pub mod slot;
+pub mod state;
 
 /// To current Minecraft protocol
 /// Don't forget to change this when porting
@@ -40,6 +46,23 @@ impl VarInt {
             0 => 1,
             n => (31 - n.leading_zeros() as usize) / 7 + 1,
         }
+    }
+
+    pub fn decode_partial_buf(buffer: &mut BytesMut) -> Result<i32, VarIntDecodeError> {
+        let mut val = 0;
+        let min_size = cmp::min(buffer.len(), Self::MAX_SIZE);
+        for i in 0..min_size {
+            let byte = buffer[i];
+            val |= (i32::from(byte) & 0b01111111) << (i * 7);
+            if byte & 0b10000000 == 0 {
+                buffer.advance(i + 1);
+                return Ok(val);
+            }
+        }
+        if buffer.len() >= Self::MAX_SIZE {
+            return Err(VarIntDecodeError::TooLarge);
+        }
+        Err(VarIntDecodeError::Incomplete)
     }
 
     pub fn decode_partial(r: &mut &[u8]) -> Result<i32, VarIntDecodeError> {
@@ -150,9 +173,18 @@ pub enum PacketError {
     OutOfBounds,
     #[error("malformed packet length VarInt")]
     MalformedLength,
+    #[error("malformed packet")]
+    MalformedPacket,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+impl From<io::Error> for PacketError {
+    fn from(_: io::Error) -> Self {
+        PacketError::EncodeFailedWrite // TODO: Correct Implementation
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[serde(try_from = "VarInt")]
 pub enum ConnectionState {
     HandShake,
     Status,
@@ -162,20 +194,20 @@ pub enum ConnectionState {
     Play,
 }
 
-impl From<VarInt> for ConnectionState {
-    fn from(value: VarInt) -> Self {
+impl TryFrom<VarInt> for ConnectionState {
+    type Error = PacketError;
+
+    fn try_from(value: VarInt) -> Result<Self, Self::Error> {
         let value = value.0;
         match value {
-            1 => Self::Status,
-            2 => Self::Login,
-            3 => Self::Transfer,
-            _ => {
-                log::info!("Unexpected Status {}", value);
-                Self::Status
-            }
+            1 => Ok(Self::Status),
+            2 => Ok(Self::Login),
+            3 => Ok(Self::Transfer),
+            _ => Err(PacketError::MalformedPacket),
         }
     }
 }
+
 pub struct RawPacket {
     pub id: VarInt,
     pub bytebuf: ByteBuffer,

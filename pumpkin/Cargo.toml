@@ -71,4 +71,7 @@ parking_lot.workspace = true
 crossbeam.workspace = true
 uuid.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
+tokio-serde.workspace = true
+tokio-stream.workspace = true
 rayon.workspace = true
