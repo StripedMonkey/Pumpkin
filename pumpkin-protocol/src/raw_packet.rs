@@ -12,16 +12,19 @@ pub trait AnyPacket {
 }
 
 /// A raw, framed packet. May be compressed or uncompressed.
+#[derive(Debug, Clone)]
 pub struct RawPacket {
     data: bytes::BytesMut,
 }
 /// An uncompressed packet containing an ID
+#[derive(Debug, Clone, PartialEq)]
 pub struct UncompressedPacket {
     packet_id: i32,
     data: bytes::BytesMut,
 }
 
 /// A maybe-Zlib compressed raw packet. When data_length is zero, the packet is uncompressed.
+#[derive(Debug, Clone)]
 pub struct CompressedPacket {
     uncompressed_size: usize,
     compressed_data: bytes::BytesMut,
@@ -118,5 +121,9 @@ impl CompressedPacket {
 
     pub fn into_inner(self) -> bytes::BytesMut {
         self.compressed_data
+    }
+
+    pub fn uncompressed_size(&self) -> usize {
+        self.uncompressed_size
     }
 }
