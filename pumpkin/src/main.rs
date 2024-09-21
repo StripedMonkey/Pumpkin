@@ -77,8 +77,6 @@ fn main() -> io::Result<()> {
         // Unique token for each incoming connection.
         let mut unique_token = Token(SERVER.0 + 1);
 
-        let use_console = ADVANCED_CONFIG.commands.use_console;
-        let rcon = ADVANCED_CONFIG.rcon.clone();
 
         let mut clients: HashMap<Token, Arc<Client>> = HashMap::new();
         let mut players: HashMap<Token, Arc<Player>> = HashMap::new();
@@ -87,6 +85,7 @@ fn main() -> io::Result<()> {
         log::info!("Started Server took {}ms", time.elapsed().as_millis());
         log::info!("You now can connect to the server, Listening on {}", addr);
 
+        let use_console = ADVANCED_CONFIG.commands.use_console;
         if use_console {
             let server = server.clone();
             tokio::spawn(async move {
@@ -108,6 +107,8 @@ fn main() -> io::Result<()> {
                 }
             });
         }
+
+        let rcon = ADVANCED_CONFIG.rcon.clone();
         if rcon.enabled {
             let server = server.clone();
             tokio::spawn(async move {

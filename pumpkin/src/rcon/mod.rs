@@ -28,7 +28,9 @@ pub enum RCONError {
 
 const SERVER: Token = Token(0);
 
-pub struct RCONServer {}
+pub struct RCONServer {
+    
+}
 
 impl RCONServer {
     pub async fn new(config: &RCONConfig, server: Arc<Server>) -> Result<Self, io::Error> {
