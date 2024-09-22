@@ -10,6 +10,9 @@ use flate2::bufread::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use tokio_util::codec::{Decoder, Encoder};
 
+/// An encoder for the simplest representation of a packet
+///
+/// The protocol specifies that a packet is always prefixed by its length, regardless of or state.
 #[derive(Debug, Default, Clone)]
 pub struct RawPacketCodec {
     current_packet_len: Option<usize>,
@@ -54,7 +57,7 @@ impl Encoder<RawPacket> for RawPacketCodec {
     }
 }
 
-/// A codec that decodes and encodes packets into bytes
+/// A codec that decodes and encodes packets
 #[derive(Default)]
 pub struct UncompressedPacketCodec {
     raw_codec: RawPacketCodec,
@@ -92,6 +95,8 @@ impl Encoder<UncompressedPacket> for UncompressedPacketCodec {
         Ok(())
     }
 }
+
+///
 #[derive(Debug, Clone)]
 struct CompressedPacketCodec {
     raw_codec: RawPacketCodec,
@@ -341,10 +346,5 @@ mod test {
         writer.send(data[..].into()).await.unwrap();
         let received = reader.next().await.unwrap().unwrap();
         assert_eq!(data[..], received);
-    }
-
-    #[tokio::test]
-    async fn full_stack() {
-
     }
 }

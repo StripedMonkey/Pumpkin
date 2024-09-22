@@ -9,15 +9,17 @@ use crate::server::connections::handshake_connection::HandShakingConnection;
 
 use super::connections::Connection;
 
-struct ConnectionListener {}
+struct ConnectionListener {
+    listener: TcpListener,
+}
 
 struct ClientConnection {
-    client_state: Connection,
+    client_state: Connection<TcpStream>,
 }
 
 impl ConnectionListener {
-    fn new() -> Self {
-        Self {}
+    pub fn new(listener: TcpListener) -> Self {
+        Self { listener }
     }
     async fn generate_listener(&self) -> io::Result<()> {
         let listener = TcpListener::bind("TODO").await?;

@@ -31,8 +31,13 @@ pub type FixedBitSet = bytes::Bytes;
 
 pub struct BitSet<'a>(pub VarInt, pub &'a [i64]);
 
+// TODO: We should avoid leaking the VarInt type to external crates where possible. To that end,
+// reducing VarInt into `#[serde(with = "serde_varint")]` would allow us to use native integer
+// types transparently. See usage of `#[serde(with = "uuid::serde::compact")]`
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VarInt(pub VarIntType);
+
+mod serde_varint {}
 
 impl VarInt {
     /// The maximum number of bytes a `VarInt` could occupy when read from and
@@ -48,6 +53,8 @@ impl VarInt {
         }
     }
 
+    /// Attempt to decode a VarInt from provided buffer.
+    /// If the buffer does not contain a complete VarInt, the buffer is not advanced or consumed.
     pub fn decode_partial_buf(buffer: &mut BytesMut) -> Result<i32, VarIntDecodeError> {
         let mut val = 0;
         let min_size = cmp::min(buffer.len(), Self::MAX_SIZE);
