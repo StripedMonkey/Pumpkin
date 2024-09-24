@@ -29,7 +29,7 @@ use pumpkin_protocol::{
     ConnectionState, RawPacket, ServerPacket, VarInt,
 };
 
-use pumpkin_protocol::server::play::SCloseContainer;
+use pumpkin_protocol::server::play::{SCloseContainer, SKeepAlive};
 use pumpkin_world::item::ItemStack;
 
 use crate::{
@@ -50,7 +50,7 @@ pub struct Player {
     /// The player's game profile information, including their username and UUID.
     pub gameprofile: GameProfile,
     /// The client connection associated with the player.
-    pub client: Client,
+    pub client: Arc<Client>,
     /// The player's configuration settings. Changes when the Player changes their settings.
     pub config: Mutex<PlayerConfig>,
     /// The player's current gamemode (e.g., Survival, Creative, Adventure).
@@ -90,7 +90,12 @@ pub struct Player {
 }
 
 impl Player {
-    pub fn new(client: Client, world: Arc<World>, entity_id: EntityId, gamemode: GameMode) -> Self {
+    pub fn new(
+        client: Arc<Client>,
+        world: Arc<World>,
+        entity_id: EntityId,
+        gamemode: GameMode,
+    ) -> Self {
         let gameprofile = match client.gameprofile.lock().clone() {
             Some(profile) => profile,
             None => {
@@ -237,7 +242,7 @@ impl Player {
             "Setting the same gamemode as already is"
         );
         self.gamemode.store(gamemode);
-        // So a little story time. I actually made an abitlties_from_gamemode function. I looked at vanilla and they always send the abilties from the gamemode. But the funny thing actually is. That the client
+        // So a little story time. I actually made an abilties_from_gamemode function. I looked at vanilla and they always send the abilties from the gamemode. But the funny thing actually is. That the client
         // does actually use the same method and set the abilties when receiving the CGameEvent gamemode packet. Just Mojang nonsense
         self.entity
             .world
@@ -369,6 +374,14 @@ impl Player {
             }
             SCloseContainer::PACKET_ID => {
                 self.handle_close_container(server, SCloseContainer::read(bytebuf)?);
+                Ok(())
+            }
+            SKeepAlive::PACKET_ID => {
+                self.client
+                    .keep_alive_sender
+                    .send(SKeepAlive::read(bytebuf)?.keep_alive_id)
+                    .await
+                    .unwrap();
                 Ok(())
             }
             _ => {

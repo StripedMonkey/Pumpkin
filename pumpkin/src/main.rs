@@ -6,11 +6,13 @@ compile_error!("Compiling for WASI targets is not supported!");
 use mio::net::TcpListener;
 use mio::{Events, Interest, Poll, Token};
 
+use client::{interrupted, Client};
+use pumpkin_protocol::client::play::CKeepAlive;
+use pumpkin_protocol::ConnectionState;
+use server::Server;
 use std::collections::HashMap;
 use std::io::{self, Read};
-
-use client::{interrupted, Client};
-use server::Server;
+use std::time::Duration;
 
 // Setup some tokens to allow us to identify which event is for which socket.
 
@@ -75,16 +77,15 @@ fn main() -> io::Result<()> {
         // Unique token for each incoming connection.
         let mut unique_token = Token(SERVER.0 + 1);
 
-        let use_console = ADVANCED_CONFIG.commands.use_console;
-        let rcon = ADVANCED_CONFIG.rcon.clone();
 
-        let mut clients: HashMap<Token, Client> = HashMap::new();
+        let mut clients: HashMap<Token, Arc<Client>> = HashMap::new();
         let mut players: HashMap<Token, Arc<Player>> = HashMap::new();
 
         let server = Arc::new(Server::new());
         log::info!("Started Server took {}ms", time.elapsed().as_millis());
         log::info!("You now can connect to the server, Listening on {}", addr);
 
+        let use_console = ADVANCED_CONFIG.commands.use_console;
         if use_console {
             let server = server.clone();
             tokio::spawn(async move {
@@ -106,6 +107,8 @@ fn main() -> io::Result<()> {
                 }
             });
         }
+
+        let rcon = ADVANCED_CONFIG.rcon.clone();
         if rcon.enabled {
             let server = server.clone();
             tokio::spawn(async move {
@@ -152,7 +155,41 @@ fn main() -> io::Result<()> {
                             token,
                             Interest::READABLE.add(Interest::WRITABLE),
                         )?;
-                        let client = Client::new(token, connection, addr);
+                        let keep_alive = tokio::sync::mpsc::channel(1024);
+                        let client =
+                            Arc::new(Client::new(token, connection, addr, keep_alive.0.into()));
+
+                        {
+                            let client = client.clone();
+                            let mut receiver = keep_alive.1;
+                            tokio::spawn(async move {
+                                let mut interval = tokio::time::interval(Duration::from_secs(1));
+                                loop {
+                                    interval.tick().await;
+                                    let now = std::time::Instant::now();
+                                    if client.connection_state.load() == ConnectionState::Play {
+                                        if now.duration_since(client.last_alive_received.load())
+                                            >= Duration::from_secs(15)
+                                        {
+                                            dbg!("no keep alive");
+                                            client.kick("No keep alive received");
+                                            break;
+                                        }
+                                        let random = rand::random::<i64>();
+                                        client.send_packet(&CKeepAlive {
+                                            keep_alive_id: random,
+                                        });
+                                        if let Some(id) = receiver.recv().await {
+                                            if id == random {
+                                                client.last_alive_received.store(now);
+                                            }
+                                        }
+                                    } else {
+                                        client.last_alive_received.store(now);
+                                    }
+                                }
+                            });
+                        }
                         clients.insert(token, client);
                     },
 

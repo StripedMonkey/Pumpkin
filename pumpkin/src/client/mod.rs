@@ -16,10 +16,9 @@ use authentication::GameProfile;
 use crossbeam::atomic::AtomicCell;
 use mio::{event::Event, net::TcpStream, Token};
 use parking_lot::Mutex;
-use pumpkin_core::text::TextComponent;
 use pumpkin_protocol::{
     bytebuf::{packet_id::Packet, DeserializerError},
-    client::{config::CConfigDisconnect, login::CLoginDisconnect, play::CPlayDisconnect},
+    client::{config::CConfigDisconnect, login::CLoginDisconnect},
     packet_decoder::PacketDecoder,
     packet_encoder::PacketEncoder,
     server::{
@@ -81,7 +80,7 @@ impl Default for PlayerConfig {
     }
 }
 
-/// Everything which makes a Conection with our Server is a `Client`.
+/// Everything which makes a Connection with our Server is a `Client`.
 /// Client will become Players when they reach the `Play` state
 pub struct Client {
     /// The client's game profile information.
@@ -113,10 +112,19 @@ pub struct Client {
 
     /// Indicates whether the client should be converted into a player.
     pub make_player: AtomicBool,
+    /// Sends each keep alive packet that the server receives for a player to here, which gets picked up in a tokio task
+    pub keep_alive_sender: Arc<tokio::sync::mpsc::Sender<i64>>,
+    /// Stores the last time it was confirmed that the client is alive
+    pub last_alive_received: AtomicCell<std::time::Instant>,
 }
 
 impl Client {
-    pub fn new(token: Token, connection: TcpStream, address: SocketAddr) -> Self {
+    pub fn new(
+        token: Token,
+        connection: TcpStream,
+        address: SocketAddr,
+        keep_alive_sender: Arc<tokio::sync::mpsc::Sender<i64>>,
+    ) -> Self {
         Self {
             protocol_version: AtomicI32::new(0),
             gameprofile: Mutex::new(None),
@@ -132,6 +140,8 @@ impl Client {
             closed: AtomicBool::new(false),
             client_packets_queue: Arc::new(Mutex::new(Vec::new())),
             make_player: AtomicBool::new(false),
+            keep_alive_sender,
+            last_alive_received: AtomicCell::new(std::time::Instant::now()),
         }
     }
 
@@ -364,11 +374,6 @@ impl Client {
             }
             ConnectionState::Config => {
                 self.try_send_packet(&CConfigDisconnect::new(reason))
-                    .unwrap_or_else(|_| self.close());
-            }
-            // So we can also kick on errors, but generally should use Player::kick
-            ConnectionState::Play => {
-                self.try_send_packet(&CPlayDisconnect::new(&TextComponent::text(reason)))
                     .unwrap_or_else(|_| self.close());
             }
             _ => {

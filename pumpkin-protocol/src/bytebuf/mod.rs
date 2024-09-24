@@ -15,6 +15,27 @@ pub struct ByteBuffer {
     buffer: BytesMut,
 }
 
+impl AsMut<BytesMut> for ByteBuffer {
+    fn as_mut(&mut self) -> &mut BytesMut {
+        &mut self.buffer
+    }
+}
+
+/// Safety: As [ByteBuffer] is only a wrapper type, and we do not perform any unsafe operations ourselves, this is safe.
+unsafe impl BufMut for ByteBuffer {
+    fn remaining_mut(&self) -> usize {
+        self.buffer.remaining_mut()
+    }
+
+    unsafe fn advance_mut(&mut self, cnt: usize) {
+        self.buffer.advance_mut(cnt)
+    }
+
+    fn chunk_mut(&mut self) -> &mut bytes::buf::UninitSlice {
+        self.buffer.chunk_mut()
+    }
+}
+
 impl ByteBuffer {
     pub fn empty() -> Self {
         Self {
@@ -323,47 +344,6 @@ impl ByteBuffer {
                 "Less than 8 bytes left to consume".to_string(),
             ))
         }
-    }
-
-    // TODO: SerializerError?
-    pub fn put_u8(&mut self, n: u8) {
-        self.buffer.put_u8(n)
-    }
-
-    pub fn put_i8(&mut self, n: i8) {
-        self.buffer.put_i8(n)
-    }
-
-    pub fn put_u16(&mut self, n: u16) {
-        self.buffer.put_u16(n)
-    }
-
-    pub fn put_i16(&mut self, n: i16) {
-        self.buffer.put_i16(n)
-    }
-
-    pub fn put_u32(&mut self, n: u32) {
-        self.buffer.put_u32(n)
-    }
-
-    pub fn put_i32(&mut self, n: i32) {
-        self.buffer.put_i32(n)
-    }
-
-    pub fn put_u64(&mut self, n: u64) {
-        self.buffer.put_u64(n)
-    }
-
-    pub fn put_i64(&mut self, n: i64) {
-        self.buffer.put_i64(n)
-    }
-
-    pub fn put_f32(&mut self, n: f32) {
-        self.buffer.put_f32(n)
-    }
-
-    pub fn put_f64(&mut self, n: f64) {
-        self.buffer.put_f64(n)
     }
 
     pub fn copy_to_bytes(&mut self, len: usize) -> Result<bytes::Bytes, DeserializerError> {

@@ -1,11 +1,12 @@
-use pumpkin_macros::packet;
+use std::fmt::Debug;
 
-use crate::{
-    bytebuf::{ByteBuffer, DeserializerError},
-    ConnectionState, ServerPacket, VarInt,
-};
+use pumpkin_macros::packet;
+use serde::Deserialize;
+
+use crate::{ConnectionState, VarInt};
 
 #[packet(0x00)]
+#[derive(Deserialize)]
 pub struct SHandShake {
     pub protocol_version: VarInt,
     pub server_address: String, // 255
@@ -13,13 +14,13 @@ pub struct SHandShake {
     pub next_state: ConnectionState,
 }
 
-impl ServerPacket for SHandShake {
-    fn read(bytebuf: &mut ByteBuffer) -> Result<Self, DeserializerError> {
-        Ok(Self {
-            protocol_version: bytebuf.get_var_int()?,
-            server_address: bytebuf.get_string_len(255)?,
-            server_port: bytebuf.get_u16()?,
-            next_state: bytebuf.get_var_int()?.into(),
-        })
+impl Debug for SHandShake {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SHandShake")
+            .field("protocol_version", &self.protocol_version.0)
+            .field("server_address", &self.server_address)
+            .field("server_port", &self.server_port)
+            .field("next_state", &self.next_state)
+            .finish()
     }
 }
