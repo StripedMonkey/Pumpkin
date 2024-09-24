@@ -5,9 +5,10 @@ use tokio::{
     net::{TcpListener, TcpStream},
 };
 
-use crate::server::connections::handshake_connection::HandShakingConnection;
+use crate::server::connections::HandShakingConnection;
 
 use super::connections::Connection;
+
 
 struct ConnectionListener {
     listener: TcpListener,
@@ -15,6 +16,7 @@ struct ConnectionListener {
 
 struct ClientConnection {
     client_state: Connection<TcpStream>,
+
 }
 
 impl ConnectionListener {

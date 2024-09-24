@@ -1,7 +1,9 @@
 // TODO: One potential optimization to consider later is to use a custom arena allocator for the
 // data buffer. This would almost certainly improve performance.
 
-use crate::{PacketError, VarInt};
+use serde::Serialize;
+
+use crate::{ClientPacket, PacketError, VarInt};
 
 //TODO: Implement
 pub trait AnyPacket {
@@ -64,6 +66,15 @@ impl TryFrom<bytes::BytesMut> for UncompressedPacket {
         Ok(UncompressedPacket::new(packet_id, value))
     }
 }
+
+// impl<T> TryFrom<T> for UncompressedPacket
+// where T: ClientPacket {
+//     type Error;
+
+//     fn try_from(value: T) -> Result<Self, Self::Error> {
+//         todo!()
+//     }
+// }
 
 impl TryFrom<bytes::BytesMut> for CompressedPacket {
     type Error = PacketError;
